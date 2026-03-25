@@ -1,0 +1,505 @@
+#+TITLE: My Neovim Literal Configuration
+#+AUTHOR: Rodrigo Gonzalez del Cueto
+#+DESCRIPTION: A Spacemacs-flavored, modular Neovim setup optimized for speed, zero-dependencies, and native LSP.
+
+* Introduction
+This is a literal Org-mode configuration for Neovim. It is designed to be:
+1. **Snappy**: Utilizing binary-backed tools like `fzf-lua` and `blink.cmp`.
+2. **Minimal**: Trimming redundant plugins (using native 0.10+ commenting) and avoiding heavy UI frameworks.
+3. **Mnemonic**: Following the Spacemacs leader key paradigm (`SPC` and `,`).
+4. **Reliable**: Using mature, well-maintained plugins with high performance profiles.
+
+* To generate lua files from shell, call:
+#+begin_src sh
+emacs -Q --batch -l org --eval '(org-babel-tangle-file "README.org")'
+#+end_src
+
+* To initialize NeoVim, call:
+#+begin_src sh
+nvim --headless "+Lazy! sync" +qa
+#+end_src
+* Phase 1: Core Engine & Bootstrapper
+
+** Bootstrapper (=init.lua=)
+#+begin_src lua :tangle init.lua :mkdirp yes
+  -- init.lua --- Bootstrapper
+
+  require("core.options")
+  require("core.keymaps")
+
+  local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+  if not vim.loop.fs_stat(lazypath) then
+    vim.fn.system({
+      "git",
+      "clone",
+      "--filter=blob:none",
+      "https://github.com/folke/lazy.nvim.git",
+      "--branch=stable",
+      lazypath,
+    })
+  end
+  vim.opt.rtp:prepend(lazypath)
+
+  require("lazy").setup("plugins", {
+    performance = {
+      rtp = {
+        disabled_plugins = {
+          "gzip", "matchit", "netrwPlugin", "tarPlugin", "tohtml", "tutor", "zipPlugin", "rplugin", "spellfile"
+        }
+      },
+    },
+  })
+#+end_src
+
+** Core Defaults (=lua/core/options.lua=)
+Includes logic to disable heavy features (LSP/Treesitter/Folding) when opening massive log files.
+#+begin_src lua :tangle lua/core/options.lua :mkdirp yes
+  -- lua/core/options.lua --- Sane Defaults & Performance
+
+  local opt = vim.opt
+
+  opt.encoding = "utf-8"
+  opt.fileencoding = "utf-8"
+  opt.backup = false
+  opt.swapfile = false
+  opt.undofile = true
+  opt.undodir = vim.fn.expand("~/.local/state/nvim/undo")
+
+  opt.number = true
+  opt.relativenumber = false
+  opt.signcolumn = "yes"
+  opt.list = true
+  opt.listchars = { trail = "·", tab = "  " }
+
+  opt.ignorecase = true
+  opt.smartcase = true
+  opt.updatetime = 200
+  opt.timeoutlen = 400
+
+  -- Highlight on yank (Pulse effect)
+  vim.api.nvim_create_autocmd("TextYankPost", {
+    callback = function()
+      vim.highlight.on_yank({ higroup="IncSearch", timeout=200 })
+    end,
+  })
+
+
+#+end_src
+
+** Keybindings (=lua/core/keymaps.lua=)
+#+begin_src lua :tangle lua/core/keymaps.lua :mkdirp yes
+  -- lua/core/keymaps.lua --- Leaders & Global Maps
+
+  vim.g.mapleader = " "
+  vim.g.maplocalleader = ","
+
+  local map = vim.keymap.set
+  local opts = { noremap = true, silent = true }
+
+  -- Exit insert mode
+  map("i", "<C-g>", "<ESC>", opts)
+
+  -- M-x equivalent
+  map("n", "<leader><leader>", "<cmd>FzfLua commands<CR>", { desc = "M-x (commands)" })
+
+  -- Buffers
+  map("n", "<leader>bn", "<cmd>bnext<CR>", { desc = "Next buffer" })
+  map("n", "<leader>bp", "<cmd>bprev<CR>", { desc = "Previous buffer" })
+  map("n", "<leader>bk", "<cmd>bdelete<CR>", { desc = "Kill buffer" })
+  map("n", "<leader>br", "<cmd>edit!<CR>", { desc = "Reload buffer" })
+  map("n", "<leader>TAB", "<cmd>b#<CR>", { desc = "Last buffer" })
+
+  -- Files
+  map("n", "<leader>fs", "<cmd>w<CR>", { desc = "Save file" })
+
+  -- Windows
+  map("n", "<leader>wd", "<C-w>c", { desc = "Delete window" })
+  map("n", "<leader>w/", "<C-w>v", { desc = "Split right" })
+  map("n", "<leader>w-", "<C-w>s", { desc = "Split below" })
+  map("n", "<leader>wh", "<C-w>h", { desc = "Window left" })
+  map("n", "<leader>wj", "<C-w>j", { desc = "Window down" })
+  map("n", "<leader>wk", "<C-w>k", { desc = "Window up" })
+  map("n", "<leader>wl", "<C-w>l", { desc = "Window right" })
+
+  -- Quit
+  map("n", "<leader>qq", "<cmd>qa<CR>", { desc = "Quit" })
+#+end_src
+
+* Phase 2: UI & Discoverability
+
+** Appearance & Which-Key (=lua/plugins/ui.lua=)
+#+begin_src lua :tangle lua/plugins/ui.lua :mkdirp yes
+  -- lua/plugins/ui.lua --- Themes, Statusline (No Icons)
+
+  return {
+    -- Which-Key (Discovery)
+    {
+      "folke/which-key.nvim",
+      event = "VeryLazy",
+      opts = {
+        preset = "modern",
+        icons = { enabled = false },
+        delay = 400,
+      },
+    },
+    
+    -- Modus Themes (High Contrast, Mnemonic)
+    {
+      "miikanissi/modus-themes.nvim",
+      priority = 1000,
+      config = function()
+        require("modus-themes").setup({ style = "vivendi" })
+        vim.cmd("colorscheme modus")
+      end,
+    },
+
+    -- Lualine (Minimalist Statusline)
+    {
+      "nvim-lualine/lualine.nvim",
+      opts = {
+        options = {
+          theme = "modus-vivendi",
+          icons_enabled = false,
+          component_separators = "|",
+          section_separators = "",
+        },
+      },
+    },
+
+  }
+#+end_src
+
+* Phase 3: Navigation & Search
+
+** Search & Navigation (=lua/plugins/navigation.lua=)
+Utilizes `fzf-lua` for high-performance project searching and `flash.nvim` for Avy-like jumping.
+#+begin_src lua :tangle lua/plugins/navigation.lua :mkdirp yes
+  -- lua/plugins/navigation.lua --- FZF-Lua & Flash
+
+  -- Helper: get the directory of the current buffer (falls back to cwd)
+  local function bufdir()
+    local buf = vim.api.nvim_buf_get_name(0)
+    if buf ~= "" then return vim.fn.fnamemodify(buf, ":p:h") end
+    return vim.fn.getcwd()
+  end
+
+  -- Helper: git root resolved from the current buffer's location
+  local function git_root()
+    local dir = bufdir()
+    local root = vim.trim(vim.fn.system({ "git", "-C", dir, "rev-parse", "--show-toplevel" }))
+    if vim.v.shell_error == 0 then return root end
+    return nil
+  end
+
+  return {
+    {
+      "ibhagwan/fzf-lua",
+      keys = {
+        -- Global Search
+        { "<leader><leader>", "<cmd>FzfLua commands<cr>", desc = "M-x (commands)" },
+        { "<leader>bb", "<cmd>FzfLua buffers<cr>", desc = "Switch buffer" },
+        { "<leader>ff", function() require("fzf-lua").files({ cwd = bufdir() }) end, desc = "Find file" },
+        { "<leader>fr", "<cmd>FzfLua oldfiles<cr>", desc = "Recent files" },
+        { "<leader>/",  function() require("fzf-lua").live_grep_native({ cwd = git_root() or bufdir() }) end, desc = "Ripgrep project" },
+        { "<leader>sl", "<cmd>FzfLua blines<cr>", desc = "Consult line" },
+        { "<leader>si", "<cmd>FzfLua lsp_document_symbols<cr>", desc = "Imenu (symbols)" },
+        { "<leader>sh", "<cmd>FzfLua help_tags<cr>", desc = "Help tags" },
+        { "<leader>sc", "<cmd>FzfLua command_history<cr>", desc = "Command history" },
+        { "<leader>sm", "<cmd>FzfLua marks<cr>", desc = "Marks" },
+        { "<leader>sd", "<cmd>FzfLua diagnostics_document<cr>", desc = "Diagnostics (buffer)" },
+        { "<leader>ry", "<cmd>FzfLua registers<cr>", desc = "Kill ring" },
+        { "<leader>ss", function() require("fzf-lua").live_grep_native({ cwd = git_root() or bufdir() }) end, desc = "Search Project" },
+
+        -- Project Search (Spacemacs SPC p)
+        { "<leader>pf", function()
+            require("fzf-lua").files({ cwd = git_root() or bufdir() })
+          end, desc = "Find file in project" },
+        { "<leader>pp", function()
+            local root = git_root()
+            if root then
+              require("fzf-lua").git_files({ cwd = root })
+            else
+              require("fzf-lua").files({ cwd = bufdir() })
+            end
+          end, desc = "Switch project" },
+      },
+      opts = {
+        "default-title",
+        fzf_opts = { ["--layout"] = "default" },
+        file_icons = false,
+        git_icons = false,
+        winopts = {
+          preview = { layout = "vertical", icons = false },
+        },
+      },
+    },
+
+    {
+      "folke/flash.nvim",
+      event = "VeryLazy",
+      keys = {
+        { "<leader>jj", mode = { "n", "x", "o" }, function() require("flash").jump() end, desc = "Jump" },
+        { "<leader>jl", mode = { "n", "x", "o" }, function() require("flash").jump({ search = { mode = "search", max_length = 0 } }) end, desc = "Jump line" },
+        { "<leader>jw", mode = { "n", "x", "o" }, function() require("flash").jump({ pattern = ".", search = { mode = "search", max_length = 1 } }) end, desc = "Jump word" },
+      },
+    },
+  }
+#+end_src
+
+* Phase 4: Modern IDE Capabilities
+
+** Code Intelligence (=lua/plugins/ide.lua=)
+#+begin_src lua :tangle lua/plugins/ide.lua :mkdirp yes
+  -- lua/plugins/ide.lua --- Treesitter, Blink.cmp, and Native LSP
+
+  return {
+    -- Treesitter: AST-based highlighting
+    {
+      "nvim-treesitter/nvim-treesitter",
+      build = ":TSUpdate",
+      opts = {
+        ensure_installed = { "c", "cpp", "python", "rust", "lua", "bash", "markdown", "vimdoc", "org" },
+        highlight = {
+          enable = true,
+          disable = function(lang, buf)
+            return vim.b[buf].large_file
+          end,
+        },
+      },
+    },
+
+    {
+      "nvim-treesitter/nvim-treesitter-textobjects",
+      branch = "main",
+      dependencies = { "nvim-treesitter/nvim-treesitter" },
+      event = "BufReadPost",
+      config = function()
+        require("nvim-treesitter-textobjects").setup({
+          select = { lookahead = true },
+          move = { set_jumps = true },
+        })
+
+        -- Select textobjects
+        local sel = function(key, query)
+          vim.keymap.set({ "x", "o" }, key, function()
+            require("nvim-treesitter-textobjects.select").select_textobject(query, "textobjects")
+          end)
+        end
+        sel("af", "@function.outer")
+        sel("if", "@function.inner")
+        sel("ac", "@class.outer")
+        sel("ic", "@class.inner")
+
+        -- Move to textobjects
+        local next_start = function(key, query)
+          vim.keymap.set({ "n", "x", "o" }, key, function()
+            require("nvim-treesitter-textobjects.move").goto_next_start(query, "textobjects")
+          end)
+        end
+        local prev_start = function(key, query)
+          vim.keymap.set({ "n", "x", "o" }, key, function()
+            require("nvim-treesitter-textobjects.move").goto_previous_start(query, "textobjects")
+          end)
+        end
+        next_start("]m", "@function.outer")
+        next_start("]c", "@class.outer")
+        prev_start("[m", "@function.outer")
+        prev_start("[c", "@class.outer")
+      end,
+    },
+
+    -- Blink.cmp: Rust-backed completion (No dependencies)
+    {
+      "saghen/blink.cmp",
+      version = "*",
+      opts = {
+        keymap = {
+          preset = "default",
+          ['<C-j>'] = { 'select_next', 'fallback' },
+          ['<C-k>'] = { 'select_prev', 'fallback' },
+        },
+        appearance = {
+          use_nvim_cmp_as_default = true,
+          nerd_font_variant = 'mono',
+          kind_icons = {}
+        },
+        sources = {
+          default = { "lsp", "path", "snippets", "buffer" },
+        },
+      },
+    },
+
+    -- Trouble: Diagnostics and Location lists
+    {
+      "folke/trouble.nvim",
+      cmd = "Trouble",
+      keys = {
+        { "<leader>ed", "<cmd>Trouble diagnostics toggle<cr>", desc = "Diagnostics" },
+        { "<leader>eb", "<cmd>Trouble diagnostics toggle filter.buf=0<cr>", desc = "Buffer diagnostics" },
+        { "<leader>es", "<cmd>Trouble symbols toggle focus=false<cr>", desc = "Symbols" },
+      },
+      opts = { icons = { indent = { fold_open = "v", fold_closed = ">" } } },
+    },
+
+    -- Conform: Lightweight universal formatter
+    {
+      "stevearc/conform.nvim",
+      event = "BufWritePre",
+      keys = {
+        { "<localleader>lf", function() require("conform").format({ async = true, lsp_fallback = true }) end, desc = "Format buffer" },
+      },
+      opts = {
+        formatters_by_ft = {
+          python = { "ruff_format" },
+          rust = { "rustfmt" },
+          c = { "clang-format" },
+          cpp = { "clang-format" },
+          lua = { "stylua" },
+        },
+      },
+    },
+
+    -- Native LSP Setup (Neovim 0.11+ Pattern)
+    {
+      "neovim/nvim-lspconfig",
+      dependencies = { "saghen/blink.cmp" },
+      config = function()
+        local capabilities = require('blink.cmp').get_lsp_capabilities()
+
+        -- Global defaults for all servers
+        vim.lsp.config("*", {
+          capabilities = capabilities,
+        })
+
+        -- Enable servers (configs loaded from nvim-lspconfig/lsp/*.lua)
+        vim.lsp.enable({ "ty", "rust_analyzer", "clangd" })
+
+        -- Major Mode Leader Bindings (Local Leader)
+        vim.api.nvim_create_autocmd("LspAttach", {
+          callback = function(args)
+            local m = function(k, f, d) vim.keymap.set("n", k, f, { buffer = args.buf, desc = d }) end
+            m("<localleader>la", vim.lsp.buf.code_action, "Code actions")
+            m("<localleader>lr", vim.lsp.buf.rename, "Rename symbol")
+            m("<localleader>lf", vim.lsp.buf.format, "Format buffer")
+            m("<localleader>ld", vim.lsp.buf.hover, "Documentation")
+            m("<localleader>li", "<cmd>FzfLua lsp_implementations<cr>", "Implementations")
+            m("<localleader>ls", "<cmd>FzfLua lsp_document_symbols<cr>", "Document symbols")
+            m("<localleader>lS", "<cmd>FzfLua lsp_workspace_symbols<cr>", "Workspace symbols")
+            m("<localleader>le", vim.diagnostic.open_float, "Show diagnostic")
+            m("[d", vim.diagnostic.goto_prev, "Prev diagnostic")
+            m("]d", vim.diagnostic.goto_next, "Next diagnostic")
+            m("gd", vim.lsp.buf.definition, "Jump to definition")
+            m("gr", "<cmd>FzfLua lsp_references<cr>", "Jump to references")
+          end,
+        })
+      end,
+    },
+  }
+#+end_src
+
+* Phase 5: Tools & Ecosystem
+
+** Git & Dired (=lua/plugins/tools.lua=)
+#+begin_src lua :tangle lua/plugins/tools.lua :mkdirp yes
+  -- Helper: git root resolved from the current buffer's location
+  local function git_root()
+    local buf = vim.api.nvim_buf_get_name(0)
+    local dir = buf ~= "" and vim.fn.fnamemodify(buf, ":p:h") or vim.fn.getcwd()
+    local root = vim.trim(vim.fn.system({ "git", "-C", dir, "rev-parse", "--show-toplevel" }))
+    if vim.v.shell_error == 0 then return root end
+    return nil
+  end
+
+  return {
+    -- Neogit: Magit-clone for Neovim (Muscle memory preservation)
+    {
+      "NeogitOrg/neogit",
+      dependencies = { "nvim-lua/plenary.nvim" }, 
+      keys = {
+        { "<leader>gg", function() require("neogit").open({ cwd = git_root() }) end, desc = "Neogit Status" },
+        { "<leader>gc", function() require("neogit").open({ "commit", cwd = git_root() }) end, desc = "Neogit Commit" },
+        { "<leader>gp", function() require("neogit").open({ "push", cwd = git_root() }) end, desc = "Neogit Push" },
+        { "<leader>gl", function() require("neogit").open({ "log", cwd = git_root() }) end, desc = "Neogit Log" },
+      },
+      opts = {
+        disable_insert_on_commit = "auto",
+        integrations = { diffview = false },
+      },
+    },
+
+    -- Gitsigns: Inline hunk info
+    {
+      "lewis6991/gitsigns.nvim",
+      event = "BufReadPost",
+      keys = {
+        { "]h", function() require("gitsigns").nav_hunk("next") end, desc = "Next hunk" },
+        { "[h", function() require("gitsigns").nav_hunk("prev") end, desc = "Prev hunk" },
+        { "<leader>ghs", function() require("gitsigns").stage_hunk() end, desc = "Stage hunk" },
+        { "<leader>ghr", function() require("gitsigns").reset_hunk() end, desc = "Reset hunk" },
+        { "<leader>ghp", function() require("gitsigns").preview_hunk() end, desc = "Preview hunk" },
+        { "<leader>gb",  function() require("gitsigns").blame_line({ full = true }) end, desc = "Blame line" },
+      },
+      opts = {
+        signs = {
+          add = { text = "+" },
+          change = { text = "~" },
+          delete = { text = "_" },
+        },
+      },
+    },
+
+    -- Oil.nvim: Writable Dired replacement
+    {
+      "stevearc/oil.nvim",
+      keys = {
+        { "<leader>fd", "<cmd>Oil<CR>", desc = "Dired" },
+        { "-", "<cmd>Oil<CR>", desc = "Dired (Up)" },
+      },
+      opts = {
+        columns = {}, 
+        view_options = { show_hidden = true },
+        keymaps = {
+          ["h"] = "actions.parent",
+          ["l"] = "actions.select",
+          ["q"] = "actions.close",
+        },
+      },
+    },
+
+    -- Editing Utilities
+    { "kylechui/nvim-surround", version = "*", event = "VeryLazy", config = true },
+    -- Note: Commenting is handled by Neovim 0.10+ native 'gc' maps.
+
+    -- Persistence: Simple session management
+    {
+      "folke/persistence.nvim",
+      event = "BufReadPre",
+      opts = {},
+      keys = {
+        { "<leader>qs", function() require("persistence").load() end, desc = "Restore Session" },
+        { "<leader>ql", function() require("persistence").load({ last = true }) end, desc = "Restore Last Session" },
+      },
+    },
+
+
+    -- Diffview: VCS history navigation
+    {
+      "sindrets/diffview.nvim",
+      cmd = { "DiffviewOpen", "DiffviewFileHistory" },
+      keys = {
+        { "<leader>gv", "<cmd>DiffviewOpen<CR>", desc = "Diffview Open" },
+        { "<leader>gh", "<cmd>DiffviewFileHistory %<CR>", desc = "File History" },
+        { "<leader>gH", "<cmd>DiffviewFileHistory<CR>", desc = "Repo History" },
+      },
+      opts = {
+        enhanced_diff_hl = true,
+        icons_enabled = false,
+      },
+    },
+  }
+#+end_src
+
+* File local variables                                             :noexport:
+;; Local Variables:
+;; eval: (add-hook 'after-save-hook (lambda ()(if (y-or-n-p "Tangle?")(org-babel-tangle))) nil t)
+;; End:
